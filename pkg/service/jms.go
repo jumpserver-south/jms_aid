@@ -8,7 +8,9 @@ import (
 	"jms_tools/pkg/sdk/utils/crypto"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"gorm.io/driver/mysql"
@@ -31,11 +33,30 @@ func initConfig(filepath string) {
 	}
 	appConfig = new(config.AppConfig)
 	appConfig.SecretKey = configMap["SECRET_KEY"]
-	appConfig.DBHost = configMap["DB_HOST"]
+	appConfig.DBHost = getHostFromDocker(configMap["DB_HOST"])
 	appConfig.DBPort = configMap["DB_PORT"]
 	appConfig.DBUser = configMap["DB_USER"]
 	appConfig.DBPassword = configMap["DB_PASSWORD"]
 	appConfig.DBName = configMap["DB_NAME"]
+}
+
+func getHostFromDocker(host string) string {
+	container := ""
+	if host == "mysql" {
+		container = "jms_mysql"
+	}
+	if container != "" {
+		finCommand := fmt.Sprintf("docker inspect -f '{{.NetworkSettings.Networks.jms_net.IPAddress}}' %s", container)
+		cmd := exec.Command("sh", "-c", finCommand)
+		if ret, err := cmd.CombinedOutput(); err == nil {
+			ipv4Regex := regexp.MustCompile(`([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})`)
+			matches := ipv4Regex.FindStringSubmatch(string(ret))
+			if len(matches) > 1 {
+				host = matches[1]
+			}
+		}
+	}
+	return host
 }
 
 func initDB() (db *gorm.DB) {
@@ -111,13 +132,13 @@ func (s *JmsService) AutoRun() {
 	}
 	if fi.IsDir() {
 		s.PreProcessing()
-	}else {
+	} else {
 		s.PostProcessing()
 	}
 }
 
 // PreProcessing 初始化并运行 JMS 服务的预处理任务，包括合并账户和备份应用资产，在执行升级 v3 操作之前执行
-func (s *JmsService) PreProcessing()  {
+func (s *JmsService) PreProcessing() {
 	// 创建 .update 文件标记为预处理状态
 	if err := os.WriteFile(getTagFilePath(), []byte("prepare"), 0644); err != nil {
 		slog.Error(fmt.Sprintf("标记文件 .update 创建失败：%s", err.Error()))
@@ -146,7 +167,6 @@ func (s *JmsService) PreProcessing()  {
 	fmt.Printf("预处理完成, 耗时 %fs, 请完成升级后再次运行本脚本程序执行后处理！\n", duration)
 }
 
-
 // postProcessing 应用迁移，在执行升级 v3 操作之后处理逻辑
 func (s *JmsService) PostProcessing() {
 	start := time.Now()
@@ -164,7 +184,6 @@ func (s *JmsService) PostProcessing() {
 	duration := time.Since(start).Seconds()
 	fmt.Printf("升级后处理完成, 耗时 %fs.\n", duration)
 }
-
 
 func getTagFilePath() string {
 	exePath, err := os.Executable()
