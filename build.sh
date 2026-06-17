@@ -2,7 +2,7 @@
 
 VERSION=${1:-dev}
 BINARY_NAME="jms_aid"
-OUTPUT_DIR="scripts"
+OUTPUT_DIR="target"
 TAR_PREFIX="${BINARY_NAME}_${VERSION}"
 
 # 清理并创建目录
@@ -11,12 +11,13 @@ rm -rf "${OUTPUT_DIR}" && mkdir -p "${OUTPUT_DIR}"
 # 通用构建函数
 build_for_arch() {
     local arch=$1
+    local tmp_bin="${BINARY_NAME}_${arch}"
     local output="${OUTPUT_DIR}/${TAR_PREFIX}_${arch}"
-    
-    GOOS=linux GOARCH="${arch}" go build -o "${BINARY_NAME}" .
-    chmod +x "${BINARY_NAME}"
+
+    GOOS=linux GOARCH="${arch}" go build -o "${tmp_bin}" .
+    chmod +x "${tmp_bin}"
     mkdir -p "${output}"
-    mv "${BINARY_NAME}" "${output}/"
+    mv "${tmp_bin}" "${output}/${BINARY_NAME}"
     tar -C "${OUTPUT_DIR}" -czf "${output}.tar.gz" "${TAR_PREFIX}_${arch}"
     rm -rf "${output}"  # 清理临时目录
 }
