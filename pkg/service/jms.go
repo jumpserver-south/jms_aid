@@ -8,12 +8,11 @@ import (
 	"jms_tools/pkg/sdk/utils/crypto"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"time"
 
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -33,6 +32,11 @@ func initConfig(filepath string) {
 	}
 	appConfig = new(config.AppConfig)
 	appConfig.SecretKey = configMap["SECRET_KEY"]
+	engine := configMap["DB_ENGINE"]
+	if engine == "" {
+		engine = "mysql"
+	}
+	appConfig.DBEngine = engine
 	appConfig.DBHost = getHostFromDocker(configMap["DB_HOST"])
 	appConfig.DBPort = configMap["DB_PORT"]
 	appConfig.DBUser = configMap["DB_USER"]
@@ -40,29 +44,15 @@ func initConfig(filepath string) {
 	appConfig.DBName = configMap["DB_NAME"]
 }
 
-func getHostFromDocker(host string) string {
-	container := ""
-	if host == "mysql" {
-		container = "jms_mysql"
-	}
-	if container != "" {
-		finCommand := fmt.Sprintf("docker inspect -f '{{.NetworkSettings.Networks.jms_net.IPAddress}}' %s", container)
-		cmd := exec.Command("sh", "-c", finCommand)
-		if ret, err := cmd.CombinedOutput(); err == nil {
-			ipv4Regex := regexp.MustCompile(`([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})`)
-			matches := ipv4Regex.FindStringSubmatch(string(ret))
-			if len(matches) > 1 {
-				host = matches[1]
-			}
-		}
-	}
-	return host
-}
-
 func initDB() (db *gorm.DB) {
 	var err error
-	db, err = gorm.Open(mysql.Open(appConfig.DBUri()), &gorm.Config{
-		// 关闭所有日志（包括 Slow SQL）
+	var dialector gorm.Dialector
+	if appConfig.IsPostgreSQL() {
+		dialector = postgres.Open(appConfig.PostgresUri())
+	} else {
+		dialector = mysql.Open(appConfig.DBUri())
+	}
+	db, err = gorm.Open(dialector, &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {

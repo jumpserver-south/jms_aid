@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path"
+	"regexp"
 )
 
 func getFilepath(filename string) string {
@@ -39,4 +41,28 @@ func existFile(filename string) (filepath string, exists bool) {
 		return filepath, false
 	}
 	return filepath, true
+}
+
+func getHostFromDocker(host string) string {
+	container := ""
+	switch host {
+	case "mysql":
+		container = "jms_mysql"
+	case "postgresql":
+		container = "jms_postgresql"
+	default:
+		return host
+	}
+	if container != "" {
+		finCommand := fmt.Sprintf("docker inspect -f '{{.NetworkSettings.Networks.jms_net.IPAddress}}' %s", container)
+		cmd := exec.Command("sh", "-c", finCommand)
+		if ret, err := cmd.CombinedOutput(); err == nil {
+			ipv4Regex := regexp.MustCompile(`([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})`)
+			matches := ipv4Regex.FindStringSubmatch(string(ret))
+			if len(matches) > 1 {
+				host = matches[1]
+			}
+		}
+	}
+	return host
 }
